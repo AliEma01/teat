@@ -4,5 +4,4 @@ pandas
 gspread
 oauth2client
 jdatetime
-os
-json
+
