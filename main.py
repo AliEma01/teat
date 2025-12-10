@@ -29,6 +29,7 @@ def run_task():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
+    print(">>>> ENV LENGTH:", len(os.environ.get("GOOGLE_CREDS_JSON", "")))
 
     creds_json_str = os.environ.get("GOOGLE_CREDS_JSON")
     creds_dict = json.loads(creds_json_str)
