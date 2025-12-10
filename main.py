@@ -27,11 +27,11 @@ def run_task():
         "https://www.googleapis.com/auth/drive"
     ]
 
-    creds = ServiceAccountCredentials.from_json_keyfile_name(
-        r"C:\Users\emad.a\Desktop\Tasks\keys\colab-auto-update-885d8a681c7c.json",
-        scope
-    )
+    creds_json_str = os.environ.get("GOOGLE_CREDS_JSON")
+    creds_dict = json.loads(creds_json_str)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
+
 
     # ----------------------------
     # 2) باز کردن شیت‌ها
