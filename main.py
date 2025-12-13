@@ -114,7 +114,7 @@ def run_task():
     # ----------------------------
     group_col = df_filtered.columns[1]
     grouped_sum = (
-        df_filtered.groupby(group_col)[cols_to_sum].sum().reset_index()
+        df_filtered.groupby(group_col)[value_cols].sum().reset_index()
     )
     
     df = grouped_sum.copy()
