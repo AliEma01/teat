@@ -84,13 +84,31 @@ def run_task():
                      (df["gregorian_date"] <= end_date)]
     
     # ----------------------------
-    # 6) تبدیل ستون‌های عددی
+    # 6) عددی‌سازی
     # ----------------------------
-    cols_to_sum = df_filtered.columns[2:-1]
-    df_filtered[cols_to_sum] = (
-        df_filtered[cols_to_sum].apply(pd.to_numeric, errors="coerce").fillna(0)
-    )
+    def clean_number(x):
+        if x is None:
+            return 0
+        s = str(x).strip()
+        if s == "":
+            return 0
     
+        # اعداد فارسی → انگلیسی
+        persian = "۰۱۲۳۴۵۶۷۸۹"
+        english = "0123456789"
+        s = s.translate(str.maketrans(persian, english))
+    
+        # حذف جداکننده‌ها
+        s = s.replace(",", "").replace("٬", "").replace(" ", "")
+    
+        try:
+            return float(s)
+        except:
+            return 0
+    
+    value_cols = df.columns[2:-1]
+    df.loc[:, value_cols] = df[value_cols].applymap(clean_number)
+
     # ----------------------------
     # 7) گروه‌بندی
     # ----------------------------
