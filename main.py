@@ -48,7 +48,8 @@ def run_task():
     input_data = final_sheet.get_values('A1:E1')
     min_perc_color = float(input_data[0][3])   # آستانه درصد
     range_ = int(input_data[0][4])             # ساعت قبل از ددلاین
-    
+    length_of_range = int(input_data[0][2])             # تعداد روز موثر
+
     # ورودی ددلاین شهرها
     city_deadlines_raw = input_sheet.get_values('G1:H200')
     city_deadlines = {row[0].strip(): int(row[1]) for row in city_deadlines_raw if len(row) == 2}
@@ -107,7 +108,7 @@ def run_task():
             return 0
     
     value_cols = df_filtered.columns[2:-1]
-    df_filtered.loc[:, value_cols] = df_filtered[value_cols].applymap(clean_number)
+    df_filtered.loc[:, value_cols] = (df_filtered[value_cols].applymap(clean_number)/length_of_range).round(2)
 
     # ----------------------------
     # 7) گروه‌بندی
