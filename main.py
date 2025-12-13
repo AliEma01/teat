@@ -106,8 +106,8 @@ def run_task():
         except:
             return 0
     
-    value_cols = df.columns[2:-1]
-    df.loc[:, value_cols] = df[value_cols].applymap(clean_number)
+    value_cols = df_filtered.columns[2:-1]
+    df_filtered.loc[:, value_cols] = df_filtered[value_cols].applymap(clean_number)
 
     # ----------------------------
     # 7) گروه‌بندی
