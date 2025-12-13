@@ -104,15 +104,26 @@ def run_task():
     df = df.sort_values("hour").reset_index(drop=True)
     
     # ----------------------------
-    # 8) محاسبه درصدها
+    # 8) محاسبه درصدها (FIXED)
     # ----------------------------
     cols = df.columns.drop("hour")
-    col_sum = df[cols].sum()
     
     for c in cols:
-        pct_col = f"درصد_{c}"
-        idx = df.columns.get_loc(c)
-        df.insert(idx + 1, pct_col, (df[c] / col_sum[c] * 100).round(1))
+        # اطمینان قطعی از عددی بودن
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    
+        total = df[c].sum()
+    
+        if total == 0:
+            pct = 0
+        else:
+            pct = (df[c] / total * 100).round(1)
+    
+        df.insert(
+            df.columns.get_loc(c) + 1,
+            f"درصد_{c}",
+            pct
+        )
     
     # ----------------------------
     # 9) پاک کردن ستون‌های قبلی (مقادیر + فرمت‌ها)
