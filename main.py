@@ -191,6 +191,356 @@ def run_task():
     
     final_data.spreadsheet.batch_update({"requests": clear_requests})
     
+    # # ----------------------------
+    # # 12) توابع کمکی و محاسبه مین/ماکس برای Heatmap (به جز تهران)
+    # # ----------------------------
+    
+    # def parse_number_cell(x):
+    #     try:
+    #         s = str(x).strip()
+    #         if s == "" or s.lower() in ["-", "n/a", "nan"]:
+    #             return None
+    #         s = s.replace(',', '').replace('٬', '').replace(' ', '').replace('%', '')
+    #         s = s.replace('\u2212', '-').replace('\u2011', '-')
+    #         return float(s)
+    #     except:
+    #         return None
+    
+    # # ستون hour
+    # try:
+    #     HOUR_COL = header.index("hour")
+    # except:
+    #     HOUR_COL = None
+    
+    # all_raw_values_others = []
+    # candidates = []
+    
+    # for col_idx, col_name in enumerate(header):
+    #     if not isinstance(col_name, str):
+    #         continue
+    
+    #     name = col_name.strip()
+    #     if name.startswith("درصد_"):
+    #         city = name.replace("درصد_", "").strip()
+    #         val_col_idx = col_idx - 1
+    #         perc_col_idx = col_idx
+    
+    #         if city not in city_deadlines:
+    #             continue
+    
+    #         deadline = city_deadlines[city]
+    #         start_green = deadline - range_
+    #         end_green   = deadline - 1
+    
+    #         for r in range(1, num_rows):
+    
+    #             raw_hour = values[r][HOUR_COL] if HOUR_COL is not None else None
+    #             raw_val  = values[r][val_col_idx]
+    #             raw_perc = values[r][perc_col_idx]
+    
+    #             hour_val = parse_number_cell(raw_hour)
+    #             val_val  = parse_number_cell(raw_val)
+    #             perc_val = parse_number_cell(raw_perc)
+    
+    #             if hour_val is None or val_val is None or perc_val is None:
+    #                 continue
+    #             if perc_val < min_perc_color:
+    #                 continue
+    
+    #             # تهران وارد Heatmap نمی‌شود
+    #             if city != "تهران":
+    #                 all_raw_values_others.append(val_val)
+    
+    #             candidates.append((r, val_col_idx, perc_col_idx, int(hour_val),
+    #                                val_val, perc_val, city,
+    #                                start_green, end_green, deadline))
+    
+    # # فقط غیر تهران
+    # if len(all_raw_values_others) > 0:
+    #     others_min = min(all_raw_values_others)
+    #     others_max = max(all_raw_values_others)
+    # else:
+    #     others_min = 0
+    #     others_max = 1
+    
+    # def normalize_value(v):
+    #     if others_max == others_min:
+    #         return 1
+    #     return (v - others_min) / (others_max - others_min)
+    
+    # # ----------------------------
+    # # 13) رنگ‌ها + جلوگیری از سفید شدن
+    # # ----------------------------
+    # def fix_intensity(x):
+    #     return 0.25 + x * 0.75
+    
+    # def color_red(i):
+    #     return {"red": 1.0, "green": 1.0 - i, "blue": 1.0 - i}
+    
+    # def color_green(i):
+    #     return {"red": 1.0 - i, "green": 1.0, "blue": 1.0 - i}
+    
+    # def color_yellow(i):
+    #     return {"red": 1.0, "green": 1.0, "blue": 1.0 - i}
+    
+    # # ----------------------------
+    # # 14) رنگ‌رزی سلول‌ها
+    # # ----------------------------
+    # requests = []
+    
+    # for (r, val_col_idx, perc_col_idx, hour, val_val, perc_val, city,
+    #      start_green, end_green, deadline) in candidates:
+    
+    #     # تعیین زون
+    #     if start_green <= hour <= end_green:
+    #         zone = "green"
+    #     elif hour < start_green:
+    #         zone = "yellow"
+    #     else:
+    #         zone = "red"
+    
+    #     #  تهران → شدت ثابت و کامل
+    #     if city == "تهران":
+    #         intensity = 1.0
+    #     else:
+    #         intensity_raw = normalize_value(val_val)
+    #         intensity = fix_intensity(intensity_raw)
+    
+    #     # انتخاب رنگ
+    #     if zone == "green":
+    #         color = color_green(intensity)
+    #     elif zone == "yellow":
+    #         color = color_yellow(intensity)
+    #     else:
+    #         color = color_red(intensity)
+    
+    #     # رنگ مقدار
+    #     requests.append({
+    #         "repeatCell": {
+    #             "range": {
+    #                 "sheetId": final_data.id,
+    #                 "startRowIndex": r,
+    #                 "endRowIndex": r+1,
+    #                 "startColumnIndex": val_col_idx,
+    #                 "endColumnIndex": val_col_idx+1
+    #             },
+    #             "cell": {"userEnteredFormat": {"backgroundColor": color}},
+    #             "fields": "userEnteredFormat.backgroundColor"
+    #         }
+    #     })
+    #     # رنگ درصد
+    #     requests.append({
+    #         "repeatCell": {
+    #             "range": {
+    #                 "sheetId": final_data.id,
+    #                 "startRowIndex": r,
+    #                 "endRowIndex": r+1,
+    #                 "startColumnIndex": perc_col_idx,
+    #                 "endColumnIndex": perc_col_idx+1
+    #             },
+    #             "cell": {"userEnteredFormat": {"backgroundColor": color}},
+    #             "fields": "userEnteredFormat.backgroundColor"
+    #         }
+    #     })
+    
+    # # ----------------------------
+    # # 15) اجرای رنگ‌ها
+    # # ----------------------------
+    # if requests:
+    #     final_data.spreadsheet.batch_update({"requests": requests})
+# -*- coding: utf-8 -*-
+"""Untitled2.ipynb
+
+Automatically generated by Colab.
+
+Original file is located at
+    https://colab.research.google.com/drive/1Q92gY2EA2fnmy5dhbyUNXzv8YYJHut7m
+"""
+
+from fastapi import FastAPI
+import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import jdatetime
+from datetime import datetime
+import json
+import os
+
+
+app = FastAPI()
+
+@app.post("/run")
+def run_task():
+
+    # ----------------------------
+    # 1) احراز هویت
+    # ----------------------------
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    print(">>>> ENV LENGTH:", len(os.environ.get("GOOGLE_CREDS_JSON", "")))
+
+    creds_json_str = os.environ.get("GOOGLE_CREDS_JSON")
+    creds_dict = json.loads(creds_json_str)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+
+    # ----------------------------
+    # 2) باز کردن شیت‌ها
+    # ----------------------------
+    sheet_file = client.open("unload_data")
+    raw_sheet = sheet_file.worksheet("raw_data")
+    final_sheet = sheet_file.worksheet("final_data")
+    input_sheet = sheet_file.worksheet("input")
+    
+    # ورودی‌های اصلی
+    input_data = final_sheet.get_values('A1:E1')
+    min_perc_color = float(input_data[0][3])   # آستانه درصد
+    range_ = int(input_data[0][4])             # ساعت قبل از ددلاین
+    length_of_range = float(input_data[0][2])             # تعداد روز موثر
+
+    # ورودی ددلاین شهرها
+    city_deadlines_raw = input_sheet.get_values('G1:H200')
+    city_deadlines = {row[0].strip(): int(row[1]) for row in city_deadlines_raw if len(row) == 2}
+    
+    # ----------------------------
+    # 3) خواندن raw_data → DataFrame
+    # ----------------------------
+    raw_data = raw_sheet.get_all_values()
+    df = pd.DataFrame(raw_data[1:], columns=raw_data[0])
+    
+    # ----------------------------
+    # 4) تبدیل تاریخ شمسی → میلادی
+    # ----------------------------
+    def jalali_to_gregorian(jalali_str):
+        try:
+            parts = jalali_str.replace('-', '/').split('/')
+            y, m, d = map(int, parts)
+            g_date = jdatetime.date(y, m, d).togregorian()
+            return g_date.strftime("%Y-%m-%d")
+        except:
+            return None
+    
+    df["gregorian_date"] = df.iloc[:, 0].apply(jalali_to_gregorian)
+    
+    # ----------------------------
+    # 5) فیلتر تاریخ
+    # ----------------------------
+    start_date = pd.to_datetime(input_data[0][0])
+    end_date = pd.to_datetime(input_data[0][1])
+    
+    df["gregorian_date"] = pd.to_datetime(df["gregorian_date"])
+    df_filtered = df[(df["gregorian_date"] >= start_date) &
+                     (df["gregorian_date"] <= end_date)]
+    
+    # ----------------------------
+    # 6) عددی‌سازی
+    # ----------------------------
+    def clean_number(x):
+        if x is None:
+            return 0
+        s = str(x).strip()
+        if s == "":
+            return 0
+    
+        # اعداد فارسی → انگلیسی
+        persian = "۰۱۲۳۴۵۶۷۸۹"
+        english = "0123456789"
+        s = s.translate(str.maketrans(persian, english))
+    
+        # حذف جداکننده‌ها
+        s = s.replace(",", "").replace("٬", "").replace(" ", "")
+    
+        try:
+            return float(s)
+        except:
+            return 0
+    
+    value_cols = df_filtered.columns[2:-1]
+    df_filtered.loc[:, value_cols] = (df_filtered[value_cols].applymap(clean_number)/length_of_range).round(2)
+
+    # ----------------------------
+    # 7) گروه‌بندی
+    # ----------------------------
+    group_col = df_filtered.columns[1]
+    grouped_sum = (
+        df_filtered.groupby(group_col)[value_cols].sum().reset_index()
+    )
+    
+    df = grouped_sum.copy()
+    df["hour"] = pd.to_numeric(df["hour"], errors="coerce")
+    df = df.sort_values("hour").reset_index(drop=True)
+    
+    # ----------------------------
+    # 8) محاسبه درصدها (FIXED)
+    # ----------------------------
+    cols = df.columns.drop("hour")
+    
+    for c in cols:
+        # اطمینان قطعی از عددی بودن
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    
+        total = df[c].sum()
+    
+        if total == 0:
+            pct = 0
+        else:
+            pct = (df[c] / total * 100).round(1)
+    
+        df.insert(
+            df.columns.get_loc(c) + 1,
+            f"درصد_{c}",
+            pct
+        )
+    
+    # ----------------------------
+    # 9) پاک کردن ستون‌های قبلی (مقادیر + فرمت‌ها)
+    # ----------------------------
+    final_data = sheet_file.worksheet("final_data")
+    
+    num_rows = len(final_data.get_all_values())
+    num_cols = len(final_data.row_values(1))
+    
+    if num_cols >= 6:
+        end_col = gspread.utils.rowcol_to_a1(1, num_cols).replace("1", "")
+        final_data.batch_clear([f"F1:{end_col}{num_rows}"])
+    
+    # ----------------------------
+    # 10 نوشتن خروجی از F1
+    # ----------------------------
+    data = [df.columns.tolist()] + df.values.tolist()
+    final_data.update("F1", data)
+    
+    # ----------------------------
+    # 11) پاک کردن رنگ‌های قبلی
+    # ----------------------------
+    values = final_data.get_all_values()
+    if not values:
+        values = []
+    
+    header = values[0] if len(values) > 0 else []
+    num_rows = len(values)
+    num_cols = len(header)
+    
+    clear_requests = [
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": final_data.id,
+                    "startRowIndex": 1,  # فقط داده‌ها، هدر حفظ شود
+                    "endRowIndex": num_rows,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": num_cols
+                },
+                "cell": {"userEnteredFormat": {"backgroundColor": None}},
+                "fields": "userEnteredFormat.backgroundColor"
+            }
+        }
+    ]
+    
+    final_data.spreadsheet.batch_update({"requests": clear_requests})
+    
     # ----------------------------
     # 12) توابع کمکی و محاسبه مین/ماکس برای Heatmap (به جز تهران)
     # ----------------------------
