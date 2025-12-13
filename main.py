@@ -108,7 +108,7 @@ def run_task():
             return 0
     
     value_cols = df_filtered.columns[2:-1]
-    df_filtered.loc[:, value_cols] = (df_filtered[value_cols].applymap(clean_number)/length_of_range).round(2)
+    df_filtered.loc[:, value_cols] = df_filtered[value_cols].applymap(clean_number)/length_of_range
 
     # ----------------------------
     # 7) گروه‌بندی
