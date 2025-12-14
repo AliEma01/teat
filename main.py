@@ -360,7 +360,7 @@ def run_task():
             if x in ("", None):
                 return None
             # حذف فاصله‌ها و جایگزینی کاما با نقطه
-            x = str(x).replace(',', '.').strip()
+            x = str(x).replace(',', '').strip()
             return float(x)
         except:
             return None
