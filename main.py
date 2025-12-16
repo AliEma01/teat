@@ -35,106 +35,112 @@ def run_task():
     creds_dict = json.loads(creds_json_str)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-
     # ----------------------------
     # 2) باز کردن شیت‌ها
     # ----------------------------
     sheet_file = client.open("unload_data")
-    raw_sheet = sheet_file.worksheet("raw_data")
-    final_sheet = sheet_file.worksheet("final_data")
+    raw_sheet   = sheet_file.worksheet("raw_data")
+    final_data  = sheet_file.worksheet("final_data")
     input_sheet = sheet_file.worksheet("input")
     
-    # ورودی‌های اصلی
-    input_data = final_sheet.get_values('A1:E1')
-    min_perc_color = float(input_data[0][3])   # آستانه درصد
-    range_ = int(input_data[0][4])             # ساعت قبل از ددلاین
-    length_of_range = float(input_data[0][2])             # تعداد روز موثر
-
-    # ورودی ددلاین شهرها
-    city_deadlines_raw = input_sheet.get_values('G1:H200')
-    city_deadlines = {row[0].strip(): int(row[1]) for row in city_deadlines_raw if len(row) == 2}
+    # ----------------------------
+    # 3) ورودی‌ها
+    # ----------------------------
+    input_data = final_data.get_values("A1:E1")
+    
+    min_perc_color  = float(input_data[0][3])
+    range_          = int(input_data[0][4])
+    length_of_range = float(input_data[0][2])
+    
+    city_deadlines_raw = input_sheet.get_values("G1:H200")
+    city_deadlines = {
+        r[0].strip(): int(r[1])
+        for r in city_deadlines_raw
+        if len(r) == 2 and r[0] and r[1]
+    }
     
     # ----------------------------
-    # 3) خواندن raw_data → DataFrame
+    # 4) خواندن raw_data
     # ----------------------------
     raw_data = raw_sheet.get_all_values()
     df = pd.DataFrame(raw_data[1:], columns=raw_data[0])
     
     # ----------------------------
-    # 4) تبدیل تاریخ شمسی → میلادی
+    # 5) تاریخ شمسی → میلادی
     # ----------------------------
-    def jalali_to_gregorian(jalali_str):
+    def jalali_to_gregorian(x):
         try:
-            parts = jalali_str.replace('-', '/').split('/')
-            y, m, d = map(int, parts)
-            g_date = jdatetime.date(y, m, d).togregorian()
-            return g_date.strftime("%Y-%m-%d")
+            y, m, d = map(int, x.replace("-", "/").split("/"))
+            return jdatetime.date(y, m, d).togregorian()
         except:
             return None
     
     df["gregorian_date"] = df.iloc[:, 0].apply(jalali_to_gregorian)
-    
-    # ----------------------------
-    # 5) فیلتر تاریخ
-    # ----------------------------
-    start_date = pd.to_datetime(input_data[0][0])
-    end_date = pd.to_datetime(input_data[0][1])
-    
     df["gregorian_date"] = pd.to_datetime(df["gregorian_date"])
-    df_filtered = df[(df["gregorian_date"] >= start_date) &
-                     (df["gregorian_date"] <= end_date)]
+    
+    start_date = pd.to_datetime(input_data[0][0])
+    end_date   = pd.to_datetime(input_data[0][1])
+    
+    df = df[
+        (df["gregorian_date"] >= start_date) &
+        (df["gregorian_date"] <= end_date)
+    ]
     
     # ----------------------------
     # 6) عددی‌سازی
     # ----------------------------
     def clean_number(x):
-        if x is None:
+        if x is None or str(x).strip() == "":
             return 0
-        s = str(x).strip()
-        if s == "":
-            return 0
-    
-        # اعداد فارسی → انگلیسی
-        persian = "۰۱۲۳۴۵۶۷۸۹"
-        english = "0123456789"
-        s = s.translate(str.maketrans(persian, english))
-    
-        # حذف جداکننده‌ها
+        s = str(x)
+        s = s.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
         s = s.replace(",", "").replace("٬", "").replace(" ", "")
-    
         try:
             return float(s)
         except:
             return 0
     
-    value_cols = df_filtered.columns[2:-1]
-    df_filtered.loc[:, value_cols] = (df_filtered[value_cols].applymap(clean_number)/length_of_range).round(2)
-
+    value_cols = df.columns[2:-1]
+    df.loc[:, value_cols] = (
+        df[value_cols]
+        .applymap(clean_number)
+        .div(length_of_range)
+        .round(2)
+    )
+    
     # ----------------------------
     # 7) گروه‌بندی
     # ----------------------------
-    group_col = df_filtered.columns[1]
-    grouped_sum = (
-        df_filtered.groupby(group_col)[value_cols].sum().reset_index()
+    group_col = df.columns[1]
+    
+    df = (
+        df.groupby(group_col)[value_cols]
+        .sum()
+        .reset_index()
+        .rename(columns={group_col: "hour"})
     )
     
-    df = grouped_sum.copy()
     df["hour"] = pd.to_numeric(df["hour"], errors="coerce")
     df = df.sort_values("hour").reset_index(drop=True)
     
     # ----------------------------
+    # 7.5) حذف ستون‌های کاملاً صفر
+    # ----------------------------
+    non_zero_cols = [c for c in value_cols if df[c].sum() != 0]
+    df = df[["hour"] + non_zero_cols]
+    
+    # ----------------------------
+    # ----------------------------
     # 8) محاسبه درصدها (FIXED)
     # ----------------------------
-    cols = df.columns.drop("hour")
-    
-    for c in cols:
-        # اطمینان قطعی از عددی بودن
+    for c in non_zero_cols:
+        # اجبار به عددی
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     
         total = df[c].sum()
     
         if total == 0:
-            pct = 0
+            pct = pd.Series([0] * len(df))
         else:
             pct = (df[c] / total * 100).round(1)
     
@@ -145,211 +151,45 @@ def run_task():
         )
     
     # ----------------------------
-    # 9) پاک کردن ستون‌های قبلی (مقادیر + فرمت‌ها)
-    # ----------------------------
-    final_data = sheet_file.worksheet("final_data")
-    
-    num_rows = len(final_data.get_all_values())
-    num_cols = len(final_data.row_values(1))
-    
-    if num_cols >= 6:
-        end_col = gspread.utils.rowcol_to_a1(1, num_cols).replace("1", "")
-        final_data.batch_clear([f"F1:{end_col}{num_rows}"])
-    
-    # ----------------------------
-    # 10 نوشتن خروجی از F1
-    # ----------------------------
-    data = [df.columns.tolist()] + df.values.tolist()
-    final_data.update("F1", data)
-    
-    # ----------------------------
-    # 11) پاک کردن رنگ‌های قبلی
+    # 9) پاک‌سازی کامل از ستون F به بعد (۲۰ ستون اضافه)
     # ----------------------------
     values = final_data.get_all_values()
-    if not values:
-        values = []
+    rows = len(values)
+    cols = len(values[0]) if values else 0
     
-    header = values[0] if len(values) > 0 else []
-    num_rows = len(values)
-    num_cols = len(header)
+    start_col = 6
+    end_col = max(cols + 20, start_col)
+    end_letter = gspread.utils.rowcol_to_a1(1, end_col).replace("1", "")
     
-    clear_requests = [
-        {
+    final_data.batch_clear([f"F1:{end_letter}{rows}"])
+    
+    # پاک کردن رنگ‌ها
+    final_data.spreadsheet.batch_update({
+        "requests": [{
             "repeatCell": {
                 "range": {
                     "sheetId": final_data.id,
-                    "startRowIndex": 1,  # فقط داده‌ها، هدر حفظ شود
-                    "endRowIndex": num_rows,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": num_cols
+                    "startRowIndex": 0,
+                    "endRowIndex": rows,
+                    "startColumnIndex": 5,
+                    "endColumnIndex": end_col
                 },
                 "cell": {"userEnteredFormat": {"backgroundColor": None}},
                 "fields": "userEnteredFormat.backgroundColor"
             }
-        }
-    ]
+        }]
+    })
     
-    final_data.spreadsheet.batch_update({"requests": clear_requests})
-    
-    # # ----------------------------
-    # # 12) توابع کمکی و محاسبه مین/ماکس برای Heatmap (به جز تهران)
-    # # ----------------------------
-    
-    # def parse_number_cell(x):
-    #     try:
-    #         s = str(x).strip()
-    #         if s == "" or s.lower() in ["-", "n/a", "nan"]:
-    #             return None
-    #         s = s.replace(',', '').replace('٬', '').replace(' ', '').replace('%', '')
-    #         s = s.replace('\u2212', '-').replace('\u2011', '-')
-    #         return float(s)
-    #     except:
-    #         return None
-    
-    # # ستون hour
-    # try:
-    #     HOUR_COL = header.index("hour")
-    # except:
-    #     HOUR_COL = None
-    
-    # all_raw_values_others = []
-    # candidates = []
-    
-    # for col_idx, col_name in enumerate(header):
-    #     if not isinstance(col_name, str):
-    #         continue
-    
-    #     name = col_name.strip()
-    #     if name.startswith("درصد_"):
-    #         city = name.replace("درصد_", "").strip()
-    #         val_col_idx = col_idx - 1
-    #         perc_col_idx = col_idx
-    
-    #         if city not in city_deadlines:
-    #             continue
-    
-    #         deadline = city_deadlines[city]
-    #         start_green = deadline - range_
-    #         end_green   = deadline - 1
-    
-    #         for r in range(1, num_rows):
-    
-    #             raw_hour = values[r][HOUR_COL] if HOUR_COL is not None else None
-    #             raw_val  = values[r][val_col_idx]
-    #             raw_perc = values[r][perc_col_idx]
-    
-    #             hour_val = parse_number_cell(raw_hour)
-    #             val_val  = parse_number_cell(raw_val)
-    #             perc_val = parse_number_cell(raw_perc)
-    
-    #             if hour_val is None or val_val is None or perc_val is None:
-    #                 continue
-    #             if perc_val < min_perc_color:
-    #                 continue
-    
-    #             # تهران وارد Heatmap نمی‌شود
-    #             if city != "تهران":
-    #                 all_raw_values_others.append(val_val)
-    
-    #             candidates.append((r, val_col_idx, perc_col_idx, int(hour_val),
-    #                                val_val, perc_val, city,
-    #                                start_green, end_green, deadline))
-    
-    # # فقط غیر تهران
-    # if len(all_raw_values_others) > 0:
-    #     others_min = min(all_raw_values_others)
-    #     others_max = max(all_raw_values_others)
-    # else:
-    #     others_min = 0
-    #     others_max = 1
-    
-    # def normalize_value(v):
-    #     if others_max == others_min:
-    #         return 1
-    #     return (v - others_min) / (others_max - others_min)
-    
-    # # ----------------------------
-    # # 13) رنگ‌ها + جلوگیری از سفید شدن
-    # # ----------------------------
-    # def fix_intensity(x):
-    #     return 0.25 + x * 0.75
-    
-    # def color_red(i):
-    #     return {"red": 1.0, "green": 1.0 - i, "blue": 1.0 - i}
-    
-    # def color_green(i):
-    #     return {"red": 1.0 - i, "green": 1.0, "blue": 1.0 - i}
-    
-    # def color_yellow(i):
-    #     return {"red": 1.0, "green": 1.0, "blue": 1.0 - i}
-    
-    # # ----------------------------
-    # # 14) رنگ‌رزی سلول‌ها
-    # # ----------------------------
-    # requests = []
-    
-    # for (r, val_col_idx, perc_col_idx, hour, val_val, perc_val, city,
-    #      start_green, end_green, deadline) in candidates:
-    
-    #     # تعیین زون
-    #     if start_green <= hour <= end_green:
-    #         zone = "green"
-    #     elif hour < start_green:
-    #         zone = "yellow"
-    #     else:
-    #         zone = "red"
-    
-    #     #  تهران → شدت ثابت و کامل
-    #     if city == "تهران":
-    #         intensity = 1.0
-    #     else:
-    #         intensity_raw = normalize_value(val_val)
-    #         intensity = fix_intensity(intensity_raw)
-    
-    #     # انتخاب رنگ
-    #     if zone == "green":
-    #         color = color_green(intensity)
-    #     elif zone == "yellow":
-    #         color = color_yellow(intensity)
-    #     else:
-    #         color = color_red(intensity)
-    
-    #     # رنگ مقدار
-    #     requests.append({
-    #         "repeatCell": {
-    #             "range": {
-    #                 "sheetId": final_data.id,
-    #                 "startRowIndex": r,
-    #                 "endRowIndex": r+1,
-    #                 "startColumnIndex": val_col_idx,
-    #                 "endColumnIndex": val_col_idx+1
-    #             },
-    #             "cell": {"userEnteredFormat": {"backgroundColor": color}},
-    #             "fields": "userEnteredFormat.backgroundColor"
-    #         }
-    #     })
-    #     # رنگ درصد
-    #     requests.append({
-    #         "repeatCell": {
-    #             "range": {
-    #                 "sheetId": final_data.id,
-    #                 "startRowIndex": r,
-    #                 "endRowIndex": r+1,
-    #                 "startColumnIndex": perc_col_idx,
-    #                 "endColumnIndex": perc_col_idx+1
-    #             },
-    #             "cell": {"userEnteredFormat": {"backgroundColor": color}},
-    #             "fields": "userEnteredFormat.backgroundColor"
-    #         }
-    #     })
-    
-    # # ----------------------------
-    # # 15) اجرای رنگ‌ها
-    # # ----------------------------
-    # if requests:
-    #     final_data.spreadsheet.batch_update({"requests": requests})
     # ----------------------------
-    # 12) رنگ‌ها + لاگ دلیل رنگ نشدن
+    # 10) نوشتن داده
+    # ----------------------------
+    final_data.update(
+        "F1",
+        [df.columns.tolist()] + df.values.tolist()
+    )
+    
+    # ----------------------------
+    # 11) رنگ‌آمیزی
     # ----------------------------
     values = final_data.get_all_values()
     header = values[0]
@@ -357,23 +197,34 @@ def run_task():
     
     def to_float(x):
         try:
-            if x in ("", None):
-                return None
-            # حذف فاصله‌ها و جایگزینی کاما با نقطه
-            x = str(x).replace(',', '').strip()
-            return float(x)
+            return float(str(x).replace(",", "").replace("٬", ""))
         except:
             return None
     
-    def intensity(v):
-        return 0.25 + v * 0.75
+    def intensity(x):
+        return 0.5 + 0.5 * x
     
     def red(i):    return {"red": 1, "green": 1-i, "blue": 1-i}
     def green(i):  return {"red": 1-i, "green": 1, "blue": 1-i}
     def yellow(i): return {"red": 1, "green": 1, "blue": 1-i}
     
+    # min / max غیر تهران
+    others = []
+    for ci, name in enumerate(header):
+        if name.startswith("درصد_"):
+            city = name.replace("درصد_", "")
+            if city != "تهران":
+                for r in range(1, len(values)):
+                    v = to_float(values[r][ci-1])
+                    if v is not None:
+                        others.append(v)
+    
+    min_v, max_v = (min(others), max(others)) if others else (0, 1)
+    
+    def normalize(v):
+        return 1 if max_v == min_v else (v - min_v) / (max_v - min_v)
+    
     requests = []
-    not_colored_log = []   # 👈 لاگ اصلی
     
     for ci, name in enumerate(header):
         if not name.startswith("درصد_"):
@@ -381,10 +232,9 @@ def run_task():
     
         city = name.replace("درصد_", "")
         if city not in city_deadlines:
-            not_colored_log.append(f"❌ ستون {city}: ددلاین ندارد")
             continue
     
-        val_col = ci - 1
+        val_col  = ci - 1
         perc_col = ci
         deadline = city_deadlines[city]
     
@@ -396,57 +246,24 @@ def run_task():
             val  = to_float(values[r][val_col])
             perc = to_float(values[r][perc_col])
     
-            # داده نامعتبر
             if hour is None or val is None:
-                not_colored_log.append(
-                    f"رد شد | شهر:{city} | سطر:{r} | hour| سطر:{val} یا value نامعتبر"
-                )
                 continue
     
             hour = int(hour)
     
-            # ----------------------------
-            # تعیین زون
-            # ----------------------------
             if start_green <= hour <= end_green:
                 zone = "green"
+            elif hour < start_green:
+                zone = "yellow"
             else:
-                if start_green >= 16:
-                    if 12 <= hour < start_green:
-                        zone = "yellow"
-                    else:
-                        zone = "red"
-                elif 12 <= start_green < 16:
-                    if (start_green - 4) <= hour < start_green:
-                        zone = "yellow"
-                    else:
-                        zone = "red"
-                else:
-                    zone = "red"
+                zone = "red"
     
-            # شرط درصد (فقط زرد و قرمز)
-            if zone != "green":
-                if perc is None:
-                    not_colored_log.append(
-                        f"رد شد | شهر:{city} | ساعت:{hour} | zone:{zone} | درصد خالی"
-                    )
-                    continue
+            if zone != "green" and (perc is None or perc < min_perc_color):
+                continue
     
-                if perc < min_perc_color:
-                    not_colored_log.append(
-                        f"رد شد | شهر:{city} | ساعت:{hour} | zone:{zone} | درصد {perc} < {min_perc_color}"
-                    )
-                    continue
+            i = 1.0 if city == "تهران" else intensity(normalize(val))
     
-            # شدت
-            # i = 1.0 if city == "تهران" else intensity(0.5)
-            i =  intensity(0.5)
-    
-            color = (
-                green(i) if zone == "green"
-                else yellow(i) if zone == "yellow"
-                else red(i)
-            )
+            color = green(i) if zone == "green" else yellow(i) if zone == "yellow" else red(i)
     
             for c in (val_col, perc_col):
                 requests.append({
@@ -463,10 +280,6 @@ def run_task():
                     }
                 })
     
-    # ----------------------------
-    # 13) اجرای رنگ‌ها
-    # ----------------------------
     if requests:
         final_data.spreadsheet.batch_update({"requests": requests})
-    
 
