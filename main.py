@@ -189,42 +189,73 @@ def run_task():
     )
     
     # ----------------------------
-    # 11) رنگ‌آمیزی
+    # 12) رنگ‌ها + لاگ دلیل رنگ نشدن (FINAL / FIXED)
     # ----------------------------
+    
     values = final_data.get_all_values()
     header = values[0]
     HOUR_COL = header.index("hour")
     
     def to_float(x):
         try:
-            return float(str(x).replace(",", "").replace("٬", ""))
+            if x in ("", None):
+                return None
+            s = str(x).strip().replace(",", "").replace("٬", "")
+            return float(s)
         except:
             return None
     
+    # شدت رنگ – جلوگیری از سفید شدن
     def intensity(x):
-        return 0.5 + 0.5 * x
+        return 0.45 + 0.55 * x   # حداقل 0.45 ، حداکثر 1
     
-    def red(i):    return {"red": 1, "green": 1-i, "blue": 1-i}
-    def green(i):  return {"red": 1-i, "green": 1, "blue": 1-i}
-    def yellow(i): return {"red": 1, "green": 1, "blue": 1-i}
+    def red(i):    
+        return {"red": 1, "green": 1-i, "blue": 1-i}
     
-    # min / max غیر تهران
-    others = []
+    def green(i):  
+        return {"red": 1-i, "green": 1, "blue": 1-i}
+    
+    def yellow(i): 
+        return {"red": 1, "green": 1, "blue": 1-i}
+    
+    # ----------------------------
+    # محاسبه min / max فقط برای غیر تهران
+    # ----------------------------
+    other_values = []
+    
     for ci, name in enumerate(header):
-        if name.startswith("درصد_"):
-            city = name.replace("درصد_", "")
-            if city != "تهران":
-                for r in range(1, len(values)):
-                    v = to_float(values[r][ci-1])
-                    if v is not None:
-                        others.append(v)
+        if not name.startswith("درصد_"):
+            continue
     
-    min_v, max_v = (min(others), max(others)) if others else (0, 1)
+        city = name.replace("درصد_", "")
+        if city == "تهران":
+            continue
+        if city not in city_deadlines:
+            continue
+    
+        val_col = ci - 1
+    
+        for r in range(1, len(values)):
+            v = to_float(values[r][val_col])
+            if v is not None:
+                other_values.append(v)
+    
+    if other_values:
+        min_val = min(other_values)
+        max_val = max(other_values)
+    else:
+        min_val, max_val = 0, 1
     
     def normalize(v):
-        return 1 if max_v == min_v else (v - min_v) / (max_v - min_v)
+        if max_val == min_val:
+            return 1.0
+        return (v - min_val) / (max_val - min_val)
     
+    # ----------------------------
+    # رنگ‌آمیزی + لاگ
+    # ----------------------------
     requests = []
+    not_colored_log = []
     
     for ci, name in enumerate(header):
         if not name.startswith("درصد_"):
@@ -232,6 +263,7 @@ def run_task():
     
         city = name.replace("درصد_", "")
         if city not in city_deadlines:
+            not_colored_log.append(f"❌ ستون {city} | ددلاین ندارد")
             continue
     
         val_col  = ci - 1
@@ -246,40 +278,90 @@ def run_task():
             val  = to_float(values[r][val_col])
             perc = to_float(values[r][perc_col])
     
+            # داده نامعتبر
             if hour is None or val is None:
+                not_colored_log.append(
+                    f"رد شد | شهر:{city} | سطر:{r} | hour یا value نامعتبر"
+                )
                 continue
     
             hour = int(hour)
     
+            # ----------------------------
+            # تعیین زون (بدون تغییر)
+            # ----------------------------
             if start_green <= hour <= end_green:
                 zone = "green"
-            elif hour < start_green:
-                zone = "yellow"
             else:
-                zone = "red"
+                if start_green >= 16:
+                    if 12 <= hour < start_green:
+                        zone = "yellow"
+                    else:
+                        zone = "red"
+                elif 12 <= start_green < 16:
+                    if (start_green - 4) <= hour < start_green:
+                        zone = "yellow"
+                    else:
+                        zone = "red"
+                else:
+                    zone = "red"
     
-            if zone != "green" and (perc is None or perc < min_perc_color):
-                continue
+            # ----------------------------
+            # شرط درصد (فقط زرد و قرمز)
+            # ----------------------------
+            if zone != "green":
+                if perc is None:
+                    not_colored_log.append(
+                        f"رد شد | شهر:{city} | ساعت:{hour} | zone:{zone} | درصد خالی"
+                    )
+                    continue
     
-            i = 1.0 if city == "تهران" else intensity(normalize(val))
+                if perc < min_perc_color:
+                    not_colored_log.append(
+                        f"رد شد | شهر:{city} | ساعت:{hour} | zone:{zone} | درصد {perc} < {min_perc_color}"
+                    )
+                    continue
     
-            color = green(i) if zone == "green" else yellow(i) if zone == "yellow" else red(i)
+            # ----------------------------
+            # شدت رنگ (تنها تغییر مجاز)
+            # ----------------------------
+            if city == "تهران":
+                i = 1.0
+            else:
+                i = intensity(normalize(val))
     
+            color = (
+                green(i) if zone == "green"
+                else yellow(i) if zone == "yellow"
+                else red(i)
+            )
+    
+            # رنگ‌کردن مقدار و درصد
             for c in (val_col, perc_col):
                 requests.append({
                     "repeatCell": {
                         "range": {
                             "sheetId": final_data.id,
                             "startRowIndex": r,
-                            "endRowIndex": r+1,
+                            "endRowIndex": r + 1,
                             "startColumnIndex": c,
-                            "endColumnIndex": c+1
+                            "endColumnIndex": c + 1
                         },
-                        "cell": {"userEnteredFormat": {"backgroundColor": color}},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": color
+                            }
+                        },
                         "fields": "userEnteredFormat.backgroundColor"
                     }
                 })
     
+    # ----------------------------
+    # اجرای رنگ‌ها
+    # ----------------------------
     if requests:
         final_data.spreadsheet.batch_update({"requests": requests})
-
+    
+    # برای دیباگ در صورت نیاز:
+    # for x in not_colored_log:
+    #     print(x)
